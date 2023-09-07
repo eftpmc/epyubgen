@@ -1,3 +1,5 @@
+import os
+
 import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urlparse, urljoin
@@ -78,7 +80,12 @@ def main():
         book.add_item(epub.EpubNav())
         book.spine = ['nav'] + chapter_items
 
-        epub.write_epub(f'{title}.epub', book, {})
+        # Create the "books" folder if it doesn't exist
+        if not os.path.exists('books'):
+            os.makedirs('books')
+
+        # Save the EPUB in the "books" folder
+        epub.write_epub(os.path.join('books', f'{title}.epub'), book, {})
 
         print(f"Scraped data and generated EPUB for {title}")
 
