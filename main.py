@@ -4,7 +4,6 @@ from bs4 import BeautifulSoup
 from urllib.parse import urljoin
 from ebooklib import epub
 
-
 def initialize_epub(title, author):
     book = epub.EpubBook()
     book.set_identifier('id123456')
@@ -20,8 +19,8 @@ def fetch_url(session, url, headers):
     return BeautifulSoup(response.text, 'html.parser')
 
 
-def search_novelhall(session, query, headers):
-    search_url = f"https://www.novelhall.com/index.php?s=so&module=book&keyword={query}"
+def search_novelhall(session, url, query, headers):
+    search_url = f"{url}/index.php?s=so&module=book&keyword={query}"
     search_soup = fetch_url(session, search_url, headers)
 
     search_results = []
@@ -30,7 +29,7 @@ def search_novelhall(session, query, headers):
         href = row.select_one('td:nth-child(2) a')['href']
         search_results.append((title, href))
 
-    return search_results
+    return search_results  # Return base_url as well
 
 
 def scrape_novelhall(session, url, headers, start_chapter, chapters_to_scrape):
@@ -68,14 +67,34 @@ def save_epub(book, title):
         os.makedirs('books')
     epub.write_epub(os.path.join('books', f'{title}.epub'), book, {})
 
+SOURCES = {
+    'NovelHall': {
+        'base_url': 'https://www.novelhall.com',
+        'search': search_novelhall,
+        'scrape': scrape_novelhall
+    }
+}
 
 def main():
     try:
         headers = {'User-Agent': 'Mozilla/5.0'}
         session = requests.Session()
 
+        # Show sources to select
+        print("Select a source:")
+        for i, source in enumerate(SOURCES.keys()):
+            print(f"{i + 1}. {source}")
+
+        source_choice = int(input("Enter the number of the source: "))
+        if source_choice < 1 or source_choice > len(SOURCES):
+            print("Invalid choice.")
+            return
+
+        selected_source = list(SOURCES.keys())[source_choice - 1]
+        base_url = SOURCES[selected_source]['base_url']
+
         query = input("Enter the book title to search: ")
-        search_results = search_novelhall(session, query, headers)
+        search_results = SOURCES[selected_source]['search'](session, base_url, query, headers)
 
         if not search_results:
             print("No results found.")
@@ -91,14 +110,13 @@ def main():
             return
 
         _, relative_url = search_results[choice - 1]
-        base_url = "https://www.novelhall.com"
         url = urljoin(base_url, relative_url)
 
         start_chapter = int(input("Enter the starting chapter: ")) - 1
         chapters_to_scrape = int(
             input("Enter the number of chapters to scrape: "))
 
-        title, cover_image, chapters = scrape_novelhall(
+        title, cover_image, chapters = SOURCES[selected_source]['scrape'](
             session, url, headers, start_chapter, chapters_to_scrape)
 
         book = initialize_epub(title, "Ari")
