@@ -1,7 +1,7 @@
 import os
 import requests
 from bs4 import BeautifulSoup
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 from ebooklib import epub
 
 def initialize_epub(title, author):
@@ -49,6 +49,63 @@ def scrape_novelhall(session, url, headers, start_chapter, chapters_to_scrape):
 
     return title, img_response.content, chapters
 
+def search_novelbin(session, url, query, headers):
+    # Make an AJAX request to the provided search URL
+    search_url = f"https://novelbin.me/ajax/search-novel?keyword={query}"
+    search_soup = fetch_url(session, search_url, headers)
+
+    # Parse the HTML to extract search results
+    search_results = []
+    for anchor in search_soup.select('a.list-group-item'):
+        title = anchor.get('title').strip()
+        href = anchor['href']
+        
+        # Check the path of the URL to filter out the 'See more results' link
+        parsed_url = urlparse(href)
+        if parsed_url.path == '/search':
+            continue
+        
+        search_results.append((title, href))
+    
+    return search_results
+
+
+def scrape_novelbin(session, url, headers, start_chapter, chapters_to_scrape):
+    with requests.Session() as session:
+        # Fetch the novel main page
+        soup = fetch_url(session, url, headers)
+        
+        # Extract the title
+        title = soup.select_one('.desc h3.title').text.strip()
+        
+        
+        # Extract image URL and fetch the image content
+        img_url = soup.select_one('.books .book img')['src']
+        img_response = session.get(img_url, headers=headers)
+        
+        # Get the novelId and construct the chapter list URL
+        novel_id = url.split('/')[-1]
+        chapter_list_url = f"https://novelbin.me/ajax/chapter-archive?novelId={novel_id}"
+        chapter_soup = fetch_url(session, chapter_list_url, headers)
+        chapter_links = [a['href'] for a in chapter_soup.select('ul.list-chapter li a')]
+        
+        # Select the required chapters based on start_chapter and chapters_to_scrape
+        chapters_to_fetch = chapter_links[start_chapter:start_chapter + chapters_to_scrape] if chapters_to_scrape else chapter_links[start_chapter:]
+        
+        chapters = []
+        for chapter_url in chapters_to_fetch:
+            chapter_soup = fetch_url(session, chapter_url, headers)
+            chapter_content_div = chapter_soup.find('div', {'id': 'chr-content'})
+
+            # Remove the <script> and <div> tags related to ads
+            for unwanted_tag in chapter_content_div.find_all(['script', 'div']):
+                unwanted_tag.decompose()
+
+            chapter_text = "".join(str(tag) for tag in chapter_content_div.find_all('p'))
+            chapters.append(chapter_text)
+
+    return title, img_response.content, chapters
+
 
 def get_intro():
     c1 = epub.EpubHtml(title='Introduction',
@@ -72,6 +129,11 @@ SOURCES = {
         'base_url': 'https://www.novelhall.com',
         'search': search_novelhall,
         'scrape': scrape_novelhall
+    },
+    'NovelBin': {
+        'base_url': 'https://novelbin.me',
+        'search': search_novelbin,
+        'scrape': scrape_novelbin
     }
 }
 
